@@ -1,4 +1,5 @@
 export const POOL = Object.freeze({ rx: 3.87, rz: 2.57, level: 0.83, floor: 0.12 });
+const WAVE_SPEED = 2.7;
 
 /** A damped finite-difference wave equation, with reflecting elliptical walls. */
 export class WaterField {
@@ -7,9 +8,11 @@ export class WaterField {
     this.dx = POOL.rx * 2 / (nx - 1); this.dz = POOL.rz * 2 / (nz - 1);
     this.height = new Float32Array(nx * nz);
     this.velocity = new Float32Array(nx * nz);
+    this.flowX = new Float32Array(nx * nz);
+    this.flowZ = new Float32Array(nx * nz);
     this.mask = new Uint8Array(nx * nz);
     this.neighbors = new Int32Array(nx * nz * 4);
-    this.active = []; this.time = 0; this.wind = 0.25;
+    this.active = []; this.time = 0; this.wind = 0.25; this.pulses = [];
     for (let z = 0; z < nz; z++) for (let x = 0; x < nx; x++) {
       const i = z * nx + x;
       const px = x * this.dx - POOL.rx, pz = z * this.dz - POOL.rz;
@@ -41,29 +44,58 @@ export class WaterField {
     }
     return true;
   }
+  launchWave(x, z, strength = 0.21, radius = 0.48) {
+    if (!this.disturb(x, z, strength, radius)) return false;
+    // Approximate the outward transport from a hand pushing water. Its crest
+    // travels with the simulated wave instead of kicking every toy instantly.
+    this.pulses.push({ x, z, strength, radius, time: this.time });
+    if (this.pulses.length > 24) this.pulses.shift();
+    return true;
+  }
   step(dt = 1 / 120) {
     this.time += dt;
+    while (this.pulses.length && this.time - this.pulses[0].time > 4) this.pulses.shift();
     const h = this.height, v = this.velocity, n = this.neighbors;
     const invX = 1 / this.dx ** 2, invZ = 1 / this.dz ** 2;
-    const damping = Math.exp(-1.15 * dt), c2 = 2.7 ** 2;
+    const damping = Math.exp(-0.72 * dt), flowDamping = Math.exp(-0.9 * dt), c2 = WAVE_SPEED ** 2;
     for (const i of this.active) {
       const p = i * 4;
       const lap = (h[n[p]] + h[n[p + 1]] - 2 * h[i]) * invX + (h[n[p + 2]] + h[n[p + 3]] - 2 * h[i]) * invZ;
       v[i] = (v[i] + c2 * lap * dt) * damping;
+      // Wave slopes accelerate the water horizontally. Floats can then receive
+      // the local moving-water velocity when the wave actually reaches them.
+      const gx = (h[n[p + 1]] - h[n[p]]) / (2 * this.dx);
+      const gz = (h[n[p + 3]] - h[n[p + 2]]) / (2 * this.dz);
+      this.flowX[i] = (this.flowX[i] - 9.81 * gx * dt) * flowDamping;
+      this.flowZ[i] = (this.flowZ[i] - 9.81 * gz * dt) * flowDamping;
     }
     for (const i of this.active) h[i] += v[i] * dt;
   }
   ambient(x, z) { return this.wind * 0.018 * (Math.sin(x * 2.2 + z * 1.4 + this.time * 1.3) + 0.5 * Math.sin(z * 3.1 - this.time * 1.1)); }
-  sample(x, z, withAmbient = true) {
+  interpolate(values, x, z) {
     const fx = Math.max(0, Math.min(this.nx - 1.001, (x + POOL.rx) / this.dx));
     const fz = Math.max(0, Math.min(this.nz - 1.001, (z + POOL.rz) / this.dz));
     const ix = Math.floor(fx), iz = Math.floor(fz), a = fx - ix, b = fz - iz, i = iz * this.nx + ix;
-    const h = this.height;
-    return (h[i] * (1 - a) + h[i + 1] * a) * (1 - b) + (h[i + this.nx] * (1 - a) + h[i + this.nx + 1] * a) * b + (withAmbient ? this.ambient(x, z) : 0);
+    return (values[i] * (1 - a) + values[i + 1] * a) * (1 - b) + (values[i + this.nx] * (1 - a) + values[i + this.nx + 1] * a) * b;
+  }
+  sample(x, z, withAmbient = true) { return this.interpolate(this.height, x, z) + (withAmbient ? this.ambient(x, z) : 0); }
+  motion(x, z) {
+    const ambientVelocity = this.wind * 0.018 * (1.3 * Math.cos(x * 2.2 + z * 1.4 + this.time * 1.3) - 0.55 * Math.cos(z * 3.1 - this.time * 1.1));
+    const flow = { x: this.interpolate(this.flowX, x, z), y: this.interpolate(this.velocity, x, z) + ambientVelocity, z: this.interpolate(this.flowZ, x, z) };
+    for (const pulse of this.pulses) {
+      const dx = x - pulse.x, dz = z - pulse.z, distance = Math.hypot(dx, dz);
+      if (distance < 0.001) continue;
+      const front = (this.time - pulse.time) * WAVE_SPEED, width = pulse.radius + distance * 0.1;
+      const offset = (distance - front) / width;
+      if (Math.abs(offset) > 2.5) continue;
+      const speed = pulse.strength * WAVE_SPEED * Math.exp(-2 * offset * offset - distance * 0.25) / Math.sqrt(1 + distance * 0.7);
+      flow.x += dx / distance * speed; flow.z += dz / distance * speed;
+    }
+    return flow;
   }
   slope(x, z) {
     return { x: (this.sample(x + this.dx, z) - this.sample(x - this.dx, z)) / (2 * this.dx), z: (this.sample(x, z + this.dz) - this.sample(x, z - this.dz)) / (2 * this.dz) };
   }
   energy() { let e = 0; for (const i of this.active) e += this.height[i] ** 2 + this.velocity[i] ** 2 * 0.005; return e; }
-  reset() { this.height.fill(0); this.velocity.fill(0); }
+  reset() { this.height.fill(0); this.velocity.fill(0); this.flowX.fill(0); this.flowZ.fill(0); this.pulses.length = 0; }
 }

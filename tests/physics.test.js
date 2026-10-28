@@ -31,6 +31,41 @@ test('all five toy types float, including a rotating beach ball', () => {
   }
 });
 
+test('a passing ripple transports every toy, without an instant global kick', () => {
+  for (const kind of ['duck', 'ring', 'ball', 'board', 'flamingo']) {
+    const p = new PoolPhysics(); p.water.wind = 0;
+    const item = p.spawn(kind, { x: 0.5, z: 0, yaw: 0 }); advance(p, 8);
+    const start = item.body.position.clone(), velocity = item.body.velocity.clone();
+    p.splash(-0.7, 0, 0.21);
+    assert.ok(item.body.velocity.almostEquals(velocity, 1e-12), `${kind}: wave should propagate before moving the float`);
+    advance(p, 0.1);
+    assert.ok(Math.abs(item.body.position.x - start.x) < 0.002, `${kind}: response arrived before the wave`);
+    let travel = 0, tilt = 0;
+    for (let frame = 0; frame < 468; frame++) {
+      p.step(1 / 120);
+      travel = Math.max(travel, Math.hypot(item.body.position.x - start.x, item.body.position.z - start.z));
+      const up = item.body.quaternion.vmult({ x: 0, y: 1, z: 0 });
+      tilt = Math.max(tilt, Math.acos(Math.max(-1, Math.min(1, up.y))));
+    }
+    assert.ok(travel > 0.1 && travel < 0.65, `${kind}: tap should produce visible, bounded drift: ${travel}`);
+    assert.ok(tilt > 0.04 && tilt < 0.6, `${kind}: wave should visibly rock or roll the toy: ${tilt}`);
+    advance(p, 12);
+    assert.ok(item.body.position.y > 0.7 && item.body.position.y < 1.2, `${kind}: must still float after the wave`);
+    assert.ok(Math.hypot(item.body.velocity.x, item.body.velocity.z) < 0.03, `${kind}: drift should settle`);
+  }
+});
+
+test('surface-current pulses remain bounded and reset removes residual flow', () => {
+  const water = new WaterField(); water.wind = 0;
+  for (let i = 0; i < 100; i++) water.launchWave(Math.sin(i), Math.cos(i), 0.07, 0.23);
+  assert.ok(water.pulses.length <= 24);
+  for (let i = 0; i < 90; i++) water.step();
+  assert.ok(Math.hypot(water.motion(1.5, 0).x, water.motion(1.5, 0).z) > 0.001);
+  water.reset();
+  assert.deepEqual(water.motion(1.5, 0), { x: 0, y: 0, z: 0 });
+  assert.equal(water.energy(), 0);
+});
+
 test('every pressed toy displaces water, resurfaces and rights itself', () => {
   for (const kind of ['duck', 'ring', 'flamingo', 'board', 'ball']) {
     const p = new PoolPhysics(); p.water.wind = 0;

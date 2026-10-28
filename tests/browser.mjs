@@ -27,6 +27,19 @@ try {
     const initial = await page.evaluate(() => window.__POOL__.state());
     assert.equal(initial.count, 7); assert.ok(initial.webgl);
     await page.screenshot({ path: `artifacts/${device.name}.png`, fullPage: true });
+    // Exercise the user's actual tap-water gesture, not only the wave button.
+    const nearbyDuck = initial.items.find(i => i.kind === 'duck');
+    const waterTap = await page.evaluate(() => window.__POOL__.project(-2.7, 0.83, -0.15));
+    if (device.hasTouch) await page.touchscreen.tap(waterTap.x, waterTap.y);
+    else await page.mouse.click(waterTap.x, waterTap.y);
+    let tapDrift = 0;
+    for (let frame = 0; frame < 12; frame++) {
+      await page.waitForTimeout(150);
+      const response = await page.evaluate(id => window.__POOL__.state().items.find(i => i.id === id), nearbyDuck.id);
+      tapDrift = Math.max(tapDrift, Math.hypot(response.position.x - nearbyDuck.position.x, response.position.z - nearbyDuck.position.z));
+    }
+    assert.ok(tapDrift > 0.06, `${device.name}: tapping the water should visibly move a nearby float: ${tapDrift}`);
+    await page.screenshot({ path: `artifacts/${device.name}-water-response.png`, fullPage: true });
     await page.getByRole('button', { name: '添加橡胶小鸭', exact: true }).click();
     await page.waitForFunction(() => window.__POOL__.state().count === 8);
     const added = await page.evaluate(() => window.__POOL__.state().items.at(-1));
@@ -77,7 +90,7 @@ try {
     await page.getByRole('button', { name: '关闭水声', exact: true }).click();
     const final = await page.evaluate(() => window.__POOL__.state());
     assert.equal(final.grabbed, null); assert.deepEqual(errors, [], `${device.name}: console errors`); assert.deepEqual(requests, [], `${device.name}: failed requests`);
-    reports.push({ device: device.name, viewport: device.viewport, initial, final, errors, failedRequests: requests, passed: true });
+    reports.push({ device: device.name, viewport: device.viewport, initial, final, tapDrift, errors, failedRequests: requests, passed: true });
     console.log(`${device.name}: PASS · touch/drag, waves, buoyancy, controls, layout · ${final.fps.toFixed(1)} fps`);
     await context.close();
   }

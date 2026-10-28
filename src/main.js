@@ -37,7 +37,7 @@ async function start() {
         pointer.pressed = true; physics.moveGrab(item.body.position.x, item.body.position.z, true); audio.splash(0.35); toast('松开，看看它浮起来');
       }, 420);
     } else if (physics.water.contains(point.x, point.z, 0.03)) {
-      physics.splash(point.x, point.z, 0.13); scene.droplets.splash(point.x, point.z, 12, 0.65); audio.splash(0.5);
+      physics.splash(point.x, point.z, 0.21); scene.droplets.splash(point.x, point.z, 16, 0.75); audio.splash(0.5);
     }
   });
   canvas.addEventListener('pointermove', event => {
@@ -47,7 +47,7 @@ async function start() {
       if (Math.hypot(event.clientX - pointer.startX, event.clientY - pointer.startY) > 9) clearPress();
       if (pointer.item) physics.moveGrab(point.x + pointer.offsetX, point.z + pointer.offsetZ, pointer.pressed);
       else if (physics.water.contains(point.x, point.z, 0.08) && point.distanceTo(pointer.last) > 0.055) {
-        physics.water.disturb(point.x, point.z, 0.06, 0.19); pointer.last.copy(point); audio.splash(0.15);
+        physics.water.launchWave(point.x, point.z, 0.07, 0.23); pointer.last.copy(point); audio.splash(0.15);
       }
     } else if (event.pointerType === 'mouse' && !event.buttons) {
       const item = scene.pick(event.clientX, event.clientY); canvas.style.cursor = item ? 'grab' : physics.water.contains(point.x, point.z) ? 'crosshair' : 'default';

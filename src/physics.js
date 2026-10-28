@@ -31,7 +31,7 @@ export class PoolPhysics {
     if (!TOYS[kind] || this.items.length >= 22) return null;
     const spec = TOYS[kind], scale = options.scale ?? 1;
     const pos = this.water.clamp(options.x ?? (Math.random() - 0.5) * 4.3, options.z ?? (Math.random() - 0.5) * 2.7, kind === 'board' ? 1 : 0.7);
-    const body = new C.Body({ mass: spec.mass * scale ** 3, linearDamping: 0.16, angularDamping: kind === 'ball' ? 0.2 : 0.53 });
+    const body = new C.Body({ mass: spec.mass * scale ** 3, linearDamping: 0.1, angularDamping: kind === 'ball' ? 0.16 : 0.32 });
     if (kind === 'board') body.addShape(new C.Box(new C.Vec3(0.36 * scale, 0.1 * scale, 1.03 * scale)));
     else if (kind === 'ring' || kind === 'flamingo') {
       for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; body.addShape(new C.Sphere(0.17 * scale), new C.Vec3(Math.cos(a) * 0.47 * scale, 0, Math.sin(a) * 0.47 * scale)); }
@@ -67,12 +67,7 @@ export class PoolPhysics {
   }
   release() { const old = this.grabbed; this.grabbed = null; return old?.item; }
   splash(x = 0, z = 0, strength = 0.22) {
-    this.water.disturb(x, z, strength, 0.35);
-    for (const { body } of this.items) {
-      const dx = body.position.x - x, dz = body.position.z - z, d = Math.hypot(dx, dz);
-      const falloff = Math.exp(-d * 0.7);
-      body.applyImpulse(new C.Vec3(dx / (d + 0.1) * strength * body.mass * falloff * 2, strength * body.mass * falloff * 2.5, dz / (d + 0.1) * strength * body.mass * falloff * 2));
-    }
+    this.water.launchWave(x, z, strength, 0.48);
   }
   step(dt) {
     this.accumulator += Math.min(Math.max(dt, 0), 0.0667);
@@ -102,7 +97,9 @@ export class PoolPhysics {
       const h = Math.max(0, Math.min(2 * r, level - b.position.y + r));
       const fraction = h * h * (3 * r - h) / (4 * r ** 3);
       const buoyancy = fraction / 0.3, wet = Math.min(buoyancy, 1.3), slope = this.water.slope(b.position.x, b.position.z);
-      b.applyForce(new C.Vec3(-b.velocity.x * b.mass * 2.7 * wet - slope.x * b.mass * 4.4, b.mass * (9.81 * buoyancy - b.velocity.y * 5.4 * wet), -b.velocity.z * b.mass * 2.7 * wet - slope.z * b.mass * 4.4));
+      const flow = this.water.motion(b.position.x, b.position.z);
+      b.applyForce(new C.Vec3(0, b.mass * (9.81 * buoyancy + (flow.y * 1.4 - b.velocity.y) * 4.3 * wet), 0));
+      b.applyForce(new C.Vec3(b.mass * wet * ((flow.x * 2.4 - b.velocity.x) * 1.6 - slope.x * 6.5), 0, b.mass * wet * ((flow.z * 2.4 - b.velocity.z) * 1.6 - slope.z * 6.5)), new C.Vec3(0, -r * 0.35, 0));
       return;
     }
     for (const local of item.samples) {
@@ -112,21 +109,21 @@ export class PoolPhysics {
       if (depth <= 0 || !this.water.contains(wp.x, wp.z, -0.05)) continue;
       const immersion = Math.min(depth / item.draft, 3.2);
       const velocity = new C.Vec3(); b.getVelocityAtWorldPoint(wp, velocity);
-      const slope = this.water.slope(wp.x, wp.z);
+      const slope = this.water.slope(wp.x, wp.z), flow = this.water.motion(wp.x, wp.z);
       const mass = b.mass / n;
       b.applyForce(new C.Vec3(
-        -velocity.x * mass * 2.7 - slope.x * mass * 4.4,
-        immersion * mass * 9.81 - velocity.y * mass * 5.4,
-        -velocity.z * mass * 2.7 - slope.z * mass * 4.4,
+        mass * ((flow.x * 2.4 - velocity.x) * 1.6 - slope.x * 6.5),
+        mass * (immersion * 9.81 + (flow.y * 1.4 - velocity.y) * 4.3),
+        mass * ((flow.z * 2.4 - velocity.z) * 1.6 - slope.z * 6.5),
       ), relative);
     }
     // Ballast in the bottom of the hollow toy gives it a restoring moment.
     // Without this, fully submerging bottom samples can invert a rubber duck.
     const up = b.quaternion.vmult(new C.Vec3(0, 1, 0)), slope = this.water.slope(b.position.x, b.position.z);
-    const normal = new C.Vec3(-slope.x * 0.35, 1, -slope.z * 0.35); normal.normalize();
+    const normal = new C.Vec3(-slope.x * 1.15, 1, -slope.z * 1.15); normal.normalize();
     const restoring = up.cross(normal);
-    b.torque.x += b.mass * (restoring.x * 8 - b.angularVelocity.x * 0.75);
-    b.torque.z += b.mass * (restoring.z * 8 - b.angularVelocity.z * 0.75);
+    b.torque.x += b.mass * (restoring.x * 8 - b.angularVelocity.x * 0.6);
+    b.torque.z += b.mass * (restoring.z * 8 - b.angularVelocity.z * 0.6);
   }
   coupleWaves(item) {
     const b = item.body; item.splashCooldown -= FIXED;
