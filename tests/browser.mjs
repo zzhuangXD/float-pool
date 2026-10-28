@@ -7,11 +7,13 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH 
 const reports = [];
 await fs.mkdir('artifacts', { recursive: true });
 try {
-  for (const device of [
+  const devices = [
     { name: 'desktop', viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 },
     { name: 'mobile', viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true },
-    { name: 'small-mobile', viewport: { width: 320, height: 740 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true },
-  ]) {
+    { name: 'compact-mobile', viewport: { width: 375, height: 667 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true },
+    { name: 'small-mobile', viewport: { width: 320, height: 568 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true },
+  ];
+  for (const device of devices.filter(d => !process.env.POOL_TEST_DEVICES || process.env.POOL_TEST_DEVICES.split(',').includes(d.name))) {
     const context = await browser.newContext(device), page = await context.newPage(), errors = [], requests = [];
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
@@ -20,6 +22,7 @@ try {
     await page.waitForFunction(() => window.__POOL__?.ready, { timeout: 25000 });
     await page.waitForTimeout(1500);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${device.name}: horizontal overflow`);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight), true, `${device.name}: vertical overflow`);
     assert.equal(await page.locator('canvas').count(), 1);
     const initial = await page.evaluate(() => window.__POOL__.state());
     assert.equal(initial.count, 7); assert.ok(initial.webgl);

@@ -61,7 +61,7 @@ GitHub Pages 从 `main` 分支的 `/docs` 目录发布。修改源码后，重�
 
 ## 浏览器验证
 
-`tests/browser.mjs` 在真实 Chrome 中检查 1440 × 900、390 × 844 和 320 × 740 视口，并使用触摸事件验证手机拖拽与长按。`tests/webkit.mjs` 用 WebKit 检查手机竖屏、横屏的渲染、点击和浮沉恢复。它们是浏览器模拟，不能代替所有实体手机的性能测试。运行结果、截图保存到被 Git 忽略的 `artifacts/`。
+`tests/browser.mjs` 在真实 Chrome 中检查 1440 × 900、390 × 844、375 × 667 和 320 × 568 视口，并使用触摸事件验证手机拖拽与长按。`tests/webkit.mjs` 用 WebKit 检查手机竖屏、横屏的渲染、点击和浮沉恢复。它们是浏览器模拟，不能代替所有实体手机的性能测试。运行结果、截图保存到被 Git 忽略的 `artifacts/`。
 
 ```sh
 # macOS 默认使用 /Applications/Google Chrome.app 中的 Chrome
