@@ -1,0 +1,17 @@
+{
+  "name": "float-pool",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "build:pages": "vite build --outDir docs",
+    "test": "node --test tests/physics.test.js",
+    "test:browser": "node tests/browser.mjs",
+    "test:webkit": "node tests/webkit.mjs"
+  },
+  "dependencies": {"three": "0.186.1", "cannon-es": "0.20.0"},
+  "devDependencies": {"vite": "8.3.5", "@playwright/test": "1.58.2"}
+}
